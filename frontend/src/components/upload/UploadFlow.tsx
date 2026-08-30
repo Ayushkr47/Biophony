@@ -112,10 +112,51 @@ export default function UploadFlow() {
     setErrors((prev) => ({ ...prev, file: undefined }));
   };
 
-  const runJob = () => {
+  const runJob = async () => {
     setStage("queued");
-    setProgress(6);
+    setProgress(10);
 
+    try {
+      if (file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("siteId", siteId);
+        formData.append("recordedAt", recordedAt);
+        formData.append("notes", notes);
+
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (uploadRes.ok) {
+          const jobData = await uploadRes.json();
+          const jobId = jobData.id;
+
+          const pollInterval = window.setInterval(async () => {
+            try {
+              const statusRes = await fetch(`/api/jobs/${jobId}`);
+              if (statusRes.ok) {
+                const status = await statusRes.json();
+                setStage(status.stage);
+                setProgress(status.progress);
+
+                if (status.stage === "done" || status.stage === "error") {
+                  window.clearInterval(pollInterval);
+                }
+              }
+            } catch (err) {
+              console.warn("Polling error:", err);
+            }
+          }, 800);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Backend upload failed, falling back to simulated job:", err);
+    }
+
+    // Simulated job fallback if backend API is not responding
     const steps: Array<[number, Stage, number]> = [
       [700, "analysing", 34],
       [2100, "indexing", 78],
@@ -138,8 +179,6 @@ export default function UploadFlow() {
     setTouched({ file: true, site: true, lat: true, lon: true, recordedAt: true });
 
     if (Object.keys(found).length > 0) {
-      // Focus moves to the summary in an effect, once React has actually
-      // rendered it — see below.
       setFocusSummary(true);
       return;
     }
